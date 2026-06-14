@@ -1,199 +1,116 @@
-import { useState } from 'react';
-import { useGetWallet, useGetTransactions, useRequestWithdrawal, getGetWalletQueryKey, getGetTransactionsQueryKey } from '@/api-client';
-import { useLang } from '@/context/LanguageContext';
-import DashboardLayout from '@/components/DashboardLayout';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useToast } from '@/hooks/use-toast';
-import { useQueryClient } from '@tanstack/react-query';
-import { ArrowDownLeft, ArrowUpRight, DollarSign, Wallet as WalletIcon, Clock, CreditCard } from 'lucide-react';
-import { format } from 'date-fns';
+import { useEffect, useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { useAuth } from "@/context/AuthContext";
+import { useLang } from "@/context/LanguageContext";
+import { DollarSign, ArrowDownCircle } from "lucide-react";
 
 export default function Wallet() {
-  const { data: wallet, isLoading: walletLoading } = useGetWallet();
-  const { data: transactions, isLoading: txLoading } = useGetTransactions();
-  const [withdrawOpen, setWithdrawOpen] = useState(false);
-  const [amount, setAmount] = useState('');
-  const [method, setMethod] = useState('');
-  const { toast } = useToast();
+  const { token, refreshUser } = useAuth();
   const { t } = useLang();
-  const queryClient = useQueryClient();
-  const withdrawMutation = useRequestWithdrawal();
+  const [wallet, setWallet] = useState<any>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState("PayPal");
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleWithdraw = (e: React.FormEvent) => {
-    e.preventDefault();
-    withdrawMutation.mutate({ data: { amount: Number(amount), method } }, {
-      onSuccess: () => {
-        toast({ title: t('withdrawalRequested'), description: t('withdrawalProcessing') });
-        setWithdrawOpen(false);
-        queryClient.invalidateQueries({ queryKey: getGetWalletQueryKey() });
-        queryClient.invalidateQueries({ queryKey: getGetTransactionsQueryKey() });
-      },
-      onError: (error: any) => {
-        toast({ title: t('withdrawalFailed'), description: error.message || t('error'), variant: "destructive" });
-      }
-    });
-  };
-
-  if (walletLoading || !wallet) {
-    return (
-      <DashboardLayout>
-        <Skeleton className="h-10 w-48 mb-6" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div>
-        <Skeleton className="h-96" />
-      </DashboardLayout>
-    );
+  async function load() {
+    if (!token) return;
+    const h = { Authorization: `Bearer ${token}` };
+    const [w, t2] = await Promise.all([
+      fetch("/api/wallet", { headers: h }).then(r => r.json()),
+      fetch("/api/wallet/transactions", { headers: h }).then(r => r.json()),
+    ]);
+    setWallet(w); setTransactions(t2);
   }
 
-  const statusClass = (s: string) =>
-    s === 'completed' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400' :
-    s === 'pending' ? 'bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400' :
-    'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400';
+  useEffect(() => { load(); refreshUser(); }, [token]);
 
-  const statusLabel = (s: string) =>
-    s === 'completed' ? t('completed') : s === 'pending' ? t('pendingStatus') : t('rejected');
+  async function handleWithdraw(e: React.FormEvent) {
+    e.preventDefault();
+    if (!token) return;
+    setLoading(true); setMsg("");
+    try {
+      const res = await fetch("/api/wallet/withdraw", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: Number(amount), method }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMsg(t("success")); setAmount(""); load();
+    } catch (err: any) { setMsg(err.message); }
+    finally { setLoading(false); }
+  }
+
+  const typeColor: Record<string, string> = {
+    earn_ad: "text-green-500", earn_task: "text-green-500", earn_survey: "text-green-500",
+    earn_referral: "text-green-500", withdraw: "text-red-500", deposit_vip: "text-orange-500",
+  };
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 dark:text-gray-100">{t('walletTitle')}</h1>
-          <p className="text-gray-500 dark:text-gray-400 mt-1">{t('walletSubtitle')}</p>
-        </div>
-        <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
-          <DialogTrigger asChild>
-            <Button className="bg-green-600 hover:bg-green-700 text-white gap-2 h-11 px-6">
-              <DollarSign className="w-5 h-5" /> {t('withdrawFunds')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px] dark:bg-gray-800">
-            <form onSubmit={handleWithdraw}>
-              <DialogHeader>
-                <DialogTitle>{t('requestWithdrawal')}</DialogTitle>
-                <DialogDescription>{t('withdrawalDesc')}</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="amount">{t('amount')}</Label>
-                  <Input id="amount" type="number" min="5" step="0.01" max={wallet.balance} value={amount} onChange={(e) => setAmount(e.target.value)} required />
-                  <p className="text-xs text-gray-500">{t('available')}: ${wallet.balance.toFixed(2)}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="method">{t('paymentMethod')}</Label>
-                  <Select value={method} onValueChange={setMethod} required>
-                    <SelectTrigger><SelectValue placeholder={t('selectMethod')} /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="paypal">{t('paypal')}</SelectItem>
-                      <SelectItem value="bank_transfer">{t('bankTransfer')}</SelectItem>
-                      <SelectItem value="crypto">{t('crypto')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit" disabled={withdrawMutation.isPending} className="bg-green-600 text-white w-full">
-                  {withdrawMutation.isPending ? t('processing') : t('submitRequest')}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">{t("wallet")}</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <Card className="border-0 shadow-sm bg-blue-800 dark:bg-blue-950 text-white">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-blue-700 dark:bg-blue-900 flex items-center justify-center">
-                <WalletIcon className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-blue-200">{t('availableBalance')}</p>
-                <h3 className="text-2xl font-bold">${wallet.balance.toFixed(2)}</h3>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid md:grid-cols-3 gap-4 mb-8">
         {[
-          { label: t('pending'), value: `$${wallet.pendingBalance.toFixed(2)}`, icon: Clock, color: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300' },
-          { label: t('totalEarned'), value: `$${wallet.totalEarned.toFixed(2)}`, icon: ArrowDownLeft, color: 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' },
-          { label: t('totalWithdrawn'), value: `$${wallet.totalWithdrawn.toFixed(2)}`, icon: ArrowUpRight, color: 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' },
-        ].map(({ label, value, icon: Icon, color }) => (
-          <Card key={label} className="border-0 shadow-sm dark:bg-gray-800">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${color}`}><Icon className="w-6 h-6" /></div>
-                <div>
-                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
-                  <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</h3>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          { label: t("walletBalance"), value: wallet?.balance ?? 0 },
+          { label: t("pendingBalance"), value: wallet?.pendingBalance ?? 0 },
+          { label: t("totalEarned"), value: wallet?.totalEarned ?? 0 },
+        ].map(({ label, value }) => (
+          <div key={label} className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm">
+            <DollarSign size={20} className="text-blue-500 mb-2" />
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">${Number(value).toFixed(2)}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">{label}</div>
+          </div>
         ))}
       </div>
 
-      <Card className="border-0 shadow-sm dark:bg-gray-800">
-        <CardHeader>
-          <CardTitle className="dark:text-gray-100">{t('transactionHistory')}</CardTitle>
-          <CardDescription>{t('recentActivity')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {txLoading ? <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
-          : !transactions || transactions.length === 0 ? (
-            <div className="text-center py-12">
-              <CreditCard className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 dark:text-gray-400">{t('noTransactions')}</p>
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm">
+          <h2 className="font-semibold text-gray-900 dark:text-white mb-4">{t("requestWithdrawal")}</h2>
+          {msg && <p className={`mb-3 text-sm ${msg === t("success") ? "text-green-500" : "text-red-500"}`}>{msg}</p>}
+          <form onSubmit={handleWithdraw} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("amount")}</label>
+              <input type="number" value={amount} onChange={e => setAmount(e.target.value)} required min="1" step="0.01"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("method")}</label>
+              <select value={method} onChange={e => setMethod(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white outline-none">
+                <option>PayPal</option><option>Binance</option><option>Bank Transfer</option><option>Wise</option>
+              </select>
+            </div>
+            <button type="submit" disabled={loading}
+              className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-60">
+              {loading ? t("loading") : t("submit")}
+            </button>
+          </form>
+        </div>
+
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm">
+          <h2 className="font-semibold text-gray-900 dark:text-white mb-4">{t("transactionHistory")}</h2>
+          {transactions.length === 0 ? (
+            <p className="text-sm text-gray-400">{t("noTransactions")}</p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('type')}</TableHead>
-                    <TableHead>{t('description')}</TableHead>
-                    <TableHead>{t('status')}</TableHead>
-                    <TableHead>{t('date')}</TableHead>
-                    <TableHead className="text-right">{t('amount')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactions.map((tx) => {
-                    const isEarn = tx.type.startsWith('earn') || tx.type === 'deposit';
-                    return (
-                      <TableRow key={tx.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isEarn ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                              {isEarn ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
-                            </div>
-                            <span className="capitalize font-medium text-gray-700 dark:text-gray-300">{tx.type}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-gray-600 dark:text-gray-400">{tx.description}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={statusClass(tx.status)}>{statusLabel(tx.status)}</Badge>
-                        </TableCell>
-                        <TableCell className="text-gray-500 dark:text-gray-400 text-sm">{format(new Date(tx.createdAt), 'MMM d, yyyy')}</TableCell>
-                        <TableCell className={`text-right font-bold ${isEarn ? 'text-green-600' : 'text-red-600'}`}>
-                          {isEarn ? '+' : '-'}${tx.amount.toFixed(2)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+            <div className="space-y-3 max-h-80 overflow-y-auto">
+              {transactions.map(tx => (
+                <div key={tx.id} className="flex justify-between items-start gap-2 text-sm py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                  <div>
+                    <div className="text-gray-700 dark:text-gray-300">{tx.description}</div>
+                    <div className="text-xs text-gray-400">{new Date(tx.createdAt).toLocaleDateString()}</div>
+                  </div>
+                  <span className={`font-semibold whitespace-nowrap ${typeColor[tx.type] ?? "text-gray-500"}`}>
+                    {tx.type === "withdraw" ? "-" : "+"}${tx.amount.toFixed(2)}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </DashboardLayout>
   );
 }

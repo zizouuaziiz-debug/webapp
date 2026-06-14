@@ -1,87 +1,100 @@
-import { useState, useEffect } from 'react';
-import { useLocation, Link } from 'wouter';
-import { useRegister } from '@/api-client';
-import { useAuth } from '@/context/AuthContext';
-import { useLang } from '@/context/LanguageContext';
-import { useToast } from '@/hooks/use-toast';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { CheckCircle } from 'lucide-react';
-import { ThemeToggle } from '@/components/ui/ThemeToggle';
-import { LanguageToggle } from '@/components/ui/LanguageToggle';
+import { useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
+import { useLang } from "@/context/LanguageContext";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { LanguageToggle } from "@/components/ui/LanguageToggle";
+import { GoogleButton } from "@/components/ui/GoogleButton";
 
 export default function Register() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [referralCode, setReferralCode] = useState('');
-  const [_, setLocation] = useLocation();
-  const { login } = useAuth();
-  const { toast } = useToast();
+  const { register, loginWithGoogle } = useAuth();
   const { t } = useLang();
-  const registerMutation = useRegister();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const refCode = params.get("ref") || "";
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const ref = params.get('ref');
-    if (ref) setReferralCode(ref);
-  }, []);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [referralCode, setReferralCode] = useState(refCode);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    registerMutation.mutate({ data: { name, email, password, referralCode: referralCode || undefined } }, {
-      onSuccess: (data) => { login(data.token, data.user); setLocation('/dashboard'); },
-      onError: (error: any) => {
-        toast({ title: t('registrationFailed'), description: error.message || t('couldNotCreate'), variant: "destructive" });
-      }
-    });
-  };
+    setError(""); setLoading(true);
+    try {
+      await register(name, email, password, referralCode || undefined);
+      navigate("/dashboard");
+    } catch (err: any) {
+      setError(err.message);
+    } finally { setLoading(false); }
+  }
+
+  async function handleGoogle(credential: string) {
+    setError(""); setLoading(true);
+    try {
+      await loginWithGoogle(credential, referralCode || undefined);
+      navigate("/dashboard");
+    } catch (err: any) {
+      setError(err.message);
+    } finally { setLoading(false); }
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-4 relative">
-      <div className="absolute top-4 end-4 flex items-center gap-2">
-        <LanguageToggle className="border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800" />
-        <ThemeToggle className="text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800" />
-      </div>
-      <Card className="w-full max-w-md shadow-lg border-0 dark:bg-gray-800">
-        <CardHeader className="space-y-2 text-center pb-6">
-          <div className="w-12 h-12 bg-blue-800 rounded-full flex items-center justify-center mx-auto mb-2">
-            <CheckCircle className="w-6 h-6 text-white" />
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+      <header className="flex justify-between items-center p-4">
+        <Link to="/" className="text-xl font-bold text-blue-600">ClickEarn</Link>
+        <div className="flex items-center gap-2"><LanguageToggle /><ThemeToggle /></div>
+      </header>
+      <main className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{t("createAccount")}</h1>
+          <p className="text-gray-500 dark:text-gray-400 mb-6">{t("joinClickEarn")}</p>
+
+          {error && <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-sm">{error}</div>}
+
+          <GoogleButton onSuccess={handleGoogle} disabled={loading} />
+
+          <div className="my-4 flex items-center gap-3">
+            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+            <span className="text-xs text-gray-400">{t("orContinueWith")}</span>
+            <div className="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
           </div>
-          <CardTitle className="text-2xl font-bold text-blue-900 dark:text-blue-300">{t('createAccount')}</CardTitle>
-          <CardDescription>{t('registerSubtitle')}</CardDescription>
-        </CardHeader>
-        <CardContent>
+
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">{t('fullName')}</Label>
-              <Input id="name" placeholder="John Doe" value={name} onChange={(e) => setName(e.target.value)} required />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("fullName")}</label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} required
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">{t('email')}</Label>
-              <Input id="email" type="email" placeholder={t('emailPlaceholder')} value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("emailAddress")}</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">{t('password')}</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("password")}</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={6}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="referralCode">{t('referralCodeOptional')}</Label>
-              <Input id="referralCode" placeholder={t('enterCode')} value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{t("referralCode")}</label>
+              <input type="text" value={referralCode} onChange={e => setReferralCode(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
-            <Button type="submit" className="w-full bg-green-600 hover:bg-green-700 text-white h-11" disabled={registerMutation.isPending}>
-              {registerMutation.isPending ? t('creatingAccount') : t('signUp')}
-            </Button>
+            <button type="submit" disabled={loading}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-colors disabled:opacity-60">
+              {loading ? t("loading") : t("createAccount")}
+            </button>
           </form>
-        </CardContent>
-        <CardFooter className="flex justify-center border-t pt-6">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            {t('haveAccount')} <Link href="/login" className="text-blue-600 font-semibold hover:underline">{t('login')}</Link>
+
+          <p className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+            {t("haveAccount")}{" "}
+            <Link to="/login" className="text-blue-600 hover:underline font-medium">{t("signIn")}</Link>
           </p>
-        </CardFooter>
-      </Card>
+        </div>
+      </main>
     </div>
   );
 }

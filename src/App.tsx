@@ -1,11 +1,8 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/context/AuthContext";
+import { GoogleOAuthProvider } from "@react-oauth/google";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { LanguageProvider } from "@/context/LanguageContext";
-import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Login from "@/pages/Login";
 import Register from "@/pages/Register";
@@ -19,45 +16,40 @@ import VIP from "@/pages/VIP";
 import Referral from "@/pages/Referral";
 import Admin from "@/pages/Admin";
 
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
-});
-
-function Router() {
-  return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route path="/login" component={Login} />
-      <Route path="/register" component={Register} />
-      <Route path="/dashboard" component={Dashboard} />
-      <Route path="/wallet" component={Wallet} />
-      <Route path="/tasks" component={Tasks} />
-      <Route path="/offers" component={Offers} />
-      <Route path="/ads" component={AdsWall} />
-      <Route path="/surveys" component={Surveys} />
-      <Route path="/vip" component={VIP} />
-      <Route path="/referral" component={Referral} />
-      <Route path="/admin" component={Admin} />
-      <Route component={NotFound} />
-    </Switch>
-  );
+function PrivateRoute({ children }: { children: React.ReactNode }) {
+  const { user, token } = useAuth();
+  if (!token) return <Navigate to="/login" replace />;
+  return <>{children}</>;
 }
+
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || "";
 
 export default function App() {
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-      <LanguageProvider>
-        <QueryClientProvider client={queryClient}>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        <LanguageProvider>
           <AuthProvider>
-            <TooltipProvider>
-              <WouterRouter>
-                <Router />
-              </WouterRouter>
-              <Toaster />
-            </TooltipProvider>
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+                <Route path="/wallet" element={<PrivateRoute><Wallet /></PrivateRoute>} />
+                <Route path="/tasks" element={<PrivateRoute><Tasks /></PrivateRoute>} />
+                <Route path="/offers" element={<PrivateRoute><Offers /></PrivateRoute>} />
+                <Route path="/ads" element={<PrivateRoute><AdsWall /></PrivateRoute>} />
+                <Route path="/surveys" element={<PrivateRoute><Surveys /></PrivateRoute>} />
+                <Route path="/vip" element={<PrivateRoute><VIP /></PrivateRoute>} />
+                <Route path="/referral" element={<PrivateRoute><Referral /></PrivateRoute>} />
+                <Route path="/admin" element={<PrivateRoute><Admin /></PrivateRoute>} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Routes>
+            </BrowserRouter>
           </AuthProvider>
-        </QueryClientProvider>
-      </LanguageProvider>
-    </ThemeProvider>
+        </LanguageProvider>
+      </ThemeProvider>
+    </GoogleOAuthProvider>
   );
 }

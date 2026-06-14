@@ -1,60 +1,93 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 
-interface AuthUser {
-  id: number;
-  name: string;
-  email: string;
-  balance: number;
-  pendingBalance: number;
-  vipLevel: number;
-  referralCode: string;
-  isAdmin: boolean;
-  isBanned: boolean;
+export interface User {
+  id: number; name: string; email: string;
+  balance: number; pendingBalance: number;
+  vipLevel: number; referralCode: string;
+  isAdmin: boolean; isBanned: boolean; createdAt: string;
 }
 
 interface AuthContextType {
-  user: AuthUser | null;
+  user: User | null;
   token: string | null;
-  login: (token: string, user: AuthUser) => void;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string, referralCode?: string) => Promise<void>;
+  loginWithGoogle: (credential: string, referralCode?: string) => Promise<void>;
   logout: () => void;
-  isLoading: boolean;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+const API = "/api";
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem("clickearn_token"));
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("clickearn_token");
-    const storedUser = localStorage.getItem("clickearn_user");
-    if (storedToken && storedUser) {
-      try {
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-      } catch {}
-    }
-    setIsLoading(false);
+    if (token) refreshUser();
   }, []);
 
-  const login = (newToken: string, newUser: AuthUser) => {
-    localStorage.setItem("clickearn_token", newToken);
-    localStorage.setItem("clickearn_user", JSON.stringify(newUser));
-    setToken(newToken);
-    setUser(newUser);
-  };
+  async function apiFetch(path: string, init?: RequestInit) {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API}${path}`, { ...init, headers: { ...headers, ...(init?.headers as any) } });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Request failed");
+    }
+    return res.json();
+  }
 
-  const logout = () => {
+  async function login(email: string, password: string) {
+    const data = await apiFetch("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    localStorage.setItem("clickearn_token", data.token);
+    setToken(data.token);
+    setUser(data.user);
+  }
+
+  async function register(name: string, email: string, password: string, referralCode?: string) {
+    const data = await apiFetch("/auth/register", { method: "POST", body: JSON.stringify({ name, email, password, referralCode }) });
+    localStorage.setItem("clickearn_token", data.token);
+    setToken(data.token);
+    setUser(data.user);
+  }
+
+  async function loginWithGoogle(credential: string, referralCode?: string) {
+    const body: any = { credential };
+    if (referralCode) body.referralCode = referralCode;
+    const data = await fetch(`${API}/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(async r => {
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Google sign-in failed"); }
+      return r.json();
+    });
+    localStorage.setItem("clickearn_token", data.token);
+    setToken(data.token);
+    setUser(data.user);
+  }
+
+  async function refreshUser() {
+    try {
+      const storedToken = localStorage.getItem("clickearn_token");
+      if (!storedToken) return;
+      const res = await fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${storedToken}` } });
+      if (!res.ok) { logout(); return; }
+      const u = await res.json();
+      setUser(u);
+    } catch { logout(); }
+  }
+
+  function logout() {
     localStorage.removeItem("clickearn_token");
-    localStorage.removeItem("clickearn_user");
     setToken(null);
     setUser(null);
-  };
+  }
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, register, loginWithGoogle, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
