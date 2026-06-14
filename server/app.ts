@@ -1,8 +1,9 @@
-import express, { type Express } from "express";
+import express from "express";
 import cors from "cors";
 import router from "./routes/index";
 
-const app: Express = express();
+const app = express();
+
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
