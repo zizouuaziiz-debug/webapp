@@ -1,4 +1,4 @@
-const app = require("../server/app").default;
+const app = require("../server/app");
 
 module.exports = function handler(req, res) {
   if (!req.url?.startsWith("/api")) {
